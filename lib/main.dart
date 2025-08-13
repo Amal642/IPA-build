@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'dart:math';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -38,16 +39,8 @@ Future<void> main() async {
     FirebaseCrashlytics.instance.recordError(error, stackTrace, fatal: true);
   });
 }
-/// Starts the background service if it's not already running.
-Future<void> startBackgroundService() async {
-  final service = FlutterBackgroundService();
-  final isRunning = await service.isRunning();
-  if (!isRunning) {
-    service.startService();
-  }
-}
 
-/// Initializes the background service
+// Initializes the background service
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
 
@@ -75,7 +68,7 @@ Future<void> initializeService() async {
       foregroundServiceNotificationId: notificationId,
     ),
     iosConfiguration: IosConfiguration(
-      autoStart: false,
+      autoStart: true,
       onForeground: onStart,
       onBackground: onIosBackground,
     ),
@@ -217,8 +210,6 @@ class PermissionWrapper extends StatefulWidget {
 
 class _PermissionWrapperState extends State<PermissionWrapper> with WidgetsBindingObserver{
   bool _hasPermission = false;
-  // Add a loading state for a better initial user experience
-  bool _isCheckingPermission = true; 
 
   @override
   void initState() {
@@ -246,49 +237,54 @@ class _PermissionWrapperState extends State<PermissionWrapper> with WidgetsBindi
 
 
   Future<void> _checkPermission() async {
+    if (Platform.isIOS) {
+    // iOS handles this automatically when accessing motion data
+    // Just assume permission until proven otherwise
+    setState(() {
+      _hasPermission = true;
+    });
+    return;
+  }
+    // Check the current status without requesting it again if already granted
     final status = await Permission.activityRecognition.status;
-    if (mounted) { // Check if the widget is still in the tree
-      if (status.isGranted) {
-        setState(() {
-          _hasPermission = true;
-          _isCheckingPermission = false;
-        });
-        // Permission is already granted, so we can start the service
-        await startBackgroundService();
-      } else {
-        setState(() {
-          _hasPermission = false;
-          _isCheckingPermission = false;
-        });
-      }
+    if (status.isGranted) {
+      // Permission is granted, update the state and proceed.
+      setState(() {
+        _hasPermission = true;
+      });
+    } else {
+      // Permission is not granted, either request it or show the screen.
+      // This part remains the same, but the state will now be updated
+      // when the user returns from the system settings.
+      setState(() {
+        _hasPermission = false;
+      });
     }
   }
 
   Future<void> _requestAndCheckPermission() async {
+    if (Platform.isIOS) {
+    // Just try to start pedometer — iOS will prompt automatically
+    setState(() {
+      _hasPermission = true;
+    });
+    return;
+  }
     final status = await Permission.activityRecognition.request();
     if (status.isGranted) {
       setState(() {
         _hasPermission = true;
       });
-      // Permission was just granted, NOW we start the service
-      await startBackgroundService();
     } else {
-      // Optional: Handle permanent denial by guiding the user to settings
-      if (status.isPermanentlyDenied) {
-        openAppSettings();
-      }
-      print("Physical activity permission was denied.");
+      // You can add logic here to show a dialog or another widget
+      // explaining why the permission is needed.
+      print("Physical activity permission denied.");
     }
   }
 
 
   @override
   Widget build(BuildContext context) {
-    // Show a loading indicator while we check the initial permission status
-    if (_isCheckingPermission) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    
     if (_hasPermission) {
       return const AuthGate();
     } else {
@@ -300,15 +296,11 @@ class _PermissionWrapperState extends State<PermissionWrapper> with WidgetsBindi
               const Text(
                 'This app needs permission to track your physical activity for step counting.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
                 onPressed: _requestAndCheckPermission,
-                child: const Text('Grant Permission', style: TextStyle(fontSize: 16)),
+                child: const Text('Grant Permission'),
               ),
             ],
           ),
