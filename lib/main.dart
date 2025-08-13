@@ -207,16 +207,53 @@ class PermissionWrapper extends StatefulWidget {
   State<PermissionWrapper> createState() => _PermissionWrapperState();
 }
 
-class _PermissionWrapperState extends State<PermissionWrapper> {
+class _PermissionWrapperState extends State<PermissionWrapper> with WidgetsBindingObserver{
   bool _hasPermission = false;
 
   @override
   void initState() {
     super.initState();
+    // Add this widget as an observer to listen for lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
     _checkPermission();
   }
 
+   @override
+  void dispose() {
+    // Remove the observer to prevent memory leaks
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // When the app comes back to the foreground, re-check permissions
+    if (state == AppLifecycleState.resumed) {
+      _checkPermission();
+    }
+  }
+
+
   Future<void> _checkPermission() async {
+    // Check the current status without requesting it again if already granted
+    final status = await Permission.activityRecognition.status;
+    if (status.isGranted) {
+      // Permission is granted, update the state and proceed.
+      setState(() {
+        _hasPermission = true;
+      });
+    } else {
+      // Permission is not granted, either request it or show the screen.
+      // This part remains the same, but the state will now be updated
+      // when the user returns from the system settings.
+      setState(() {
+        _hasPermission = false;
+      });
+    }
+  }
+
+  Future<void> _requestAndCheckPermission() async {
     final status = await Permission.activityRecognition.request();
     if (status.isGranted) {
       setState(() {
@@ -228,6 +265,7 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
       print("Physical activity permission denied.");
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +283,7 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: _checkPermission,
+                onPressed: _requestAndCheckPermission,
                 child: const Text('Grant Permission'),
               ),
             ],
