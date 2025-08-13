@@ -178,6 +178,16 @@ class _LoginPageState extends State<LoginPage> {
                         'assets/images/logo_highscope.png',
                         height: 100,
                       ),
+                       //give a button to bypass to home screen
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => HomePage()),
+                          );
+                        },
+                        child: Text("Skip Login"),
+                      ),
                       const SizedBox(height: 24),
                       Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
