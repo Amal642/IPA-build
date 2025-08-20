@@ -3,15 +3,33 @@
     package="com.aitechapps.fitnesschallenge">
     
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+<!-- If targeting Android 10+ -->
+<uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false"/>
+<uses-feature android:name="android.hardware.sensor.stepdetector" android:required="false"/>
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 13+ -->
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+<!-- Android 12 and below -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<!-- Required for OTP auto-read -->
+<uses-permission android:name="android.permission.RECEIVE_SMS"/>
+<uses-permission android:name="android.permission.READ_SMS"/>
+<uses-permission android:name="android.permission.INTERNET"/>
+
+
+
+
 
     <application
         android:label="MBM fitness challenge 2025"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -29,6 +47,12 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        
+    </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"
@@ -36,7 +60,7 @@
         
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="health"
+            android:foregroundServiceType="dataSync|health"
             android:exported="false"
             tools:replace="android:exported"
             />

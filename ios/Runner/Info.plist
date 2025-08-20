@@ -3,12 +3,19 @@
 <plist version="1.0">
 <dict>
 	<key>NSMotionUsageDescription</key>
-	<string>This application tracks your steps</string>
+	<string>This app uses motion data to count your steps even in the background.</string>
 	<key>UIBackgroundModes</key>
 	<array>
     <string>processing</string>
 	<string>fetch</string>
 	</array>
+<key>NSUserNotificationsUsageDescription</key>
+<string>This app uses notifications to remind you about your fitness progress.</string>
+
+	<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs access to your photo library to select a profile picture.</string>
+
+
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>

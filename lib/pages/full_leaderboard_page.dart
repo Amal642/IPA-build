@@ -1,82 +1,28 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
 
 class FullLeaderboardPage extends StatefulWidget {
   const FullLeaderboardPage({super.key});
+
   @override
-  _FullLeaderboardPageState createState() => _FullLeaderboardPageState();
+  State<FullLeaderboardPage> createState() => _FullLeaderboardPageState();
 }
 
 class _FullLeaderboardPageState extends State<FullLeaderboardPage> {
-  List<Map<String, dynamic>> _leaderboard = [];
-  bool _isLoading = false;
-  bool _hasMore = true;
-  String _error = '';
+  final List<Map<String, dynamic>> _items = [];
   final ScrollController _scrollController = ScrollController();
+  DocumentSnapshot? _lastDoc;
+  bool _hasMore = true;
+  bool _isLoading = false;
+  bool _isInitialLoad = true;
+
+  static const int pageSize = 20;
 
   @override
   void initState() {
     super.initState();
-    _isLoading = true;
-
-    _loadFullLeaderboardOnceDaily()
-        .then((cached) {
-          setState(() {
-            _leaderboard = cached;
-            _hasMore = false;
-            _isLoading = false;
-          });
-        })
-        .catchError((e) {
-          setState(() {
-            _error = 'Failed to load leaderboard.';
-            _isLoading = false;
-          });
-        });
-  }
-
-  Future<List<Map<String, dynamic>>> _loadFullLeaderboardOnceDaily() async {
-    final prefs = await SharedPreferences.getInstance();
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-    final cachedDate = prefs.getString('cached_full_leaderboard_date');
-    final cachedJson = prefs.getStringList('cached_full_leaderboard');
-
-    if (cachedDate == today && cachedJson != null) {
-      return cachedJson
-          .map((e) => Map<String, dynamic>.from(json.decode(e)))
-          .toList();
-    }
-
-    final query =
-        await FirebaseFirestore.instance
-            .collection('users')
-            .orderBy('total_kms', descending: true)
-            .limit(100) // Limit to 100 for caching; scroll fetch more
-            .get();
-
-    final data =
-        query.docs.map((doc) {
-          return {
-            'first_name': doc['first_name'] ?? '',
-            'last_name': doc['last_name'] ?? '',
-            'steps': doc['total_steps'] ?? 0,
-            'total_km': doc['total_kms'] ?? 0.0,
-            'avatarUrl': doc['profile_image_url'] ?? '',
-          };
-        }).toList();
-
-    await prefs.setString('cached_full_leaderboard_date', today);
-    await prefs.setStringList(
-      'cached_full_leaderboard',
-      data.map((e) => json.encode(e)).toList(),
-    );
-
-    return data;
+    _fetchPage(replace: true);
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -85,81 +31,183 @@ class _FullLeaderboardPageState extends State<FullLeaderboardPage> {
     super.dispose();
   }
 
+  String _formatNumber(num value) {
+    if (value >= 1000000) {
+      return "${(value / 1000000).toStringAsFixed(1)}M";
+    } else if (value >= 1000) {
+      return "${(value / 1000).toStringAsFixed(1)}K";
+    } else {
+      return value.toStringAsFixed(2);
+    }
+  }
+
+  Future<void> _fetchPage({bool replace = false}) async {
+    if (_isLoading || (!_hasMore && !replace)) return;
+    setState(() => _isLoading = true);
+
+    try {
+      Query query = FirebaseFirestore.instance
+          .collection('users')
+          .orderBy('total_steps', descending: true)
+          .limit(pageSize);
+
+      if (_lastDoc != null && !replace) {
+        query = query.startAfterDocument(_lastDoc!);
+      }
+
+      final snapshot = await query.get();
+
+      if (replace) {
+        _items.clear();
+        _lastDoc = null;
+        _hasMore = true;
+      }
+
+      if (snapshot.docs.isNotEmpty) {
+        setState(() {
+          _items.addAll(
+            snapshot.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return {
+                'id': doc.id,
+                'first_name': data['first_name'] ?? '',
+                'last_name': data['last_name'] ?? '',
+                'total_steps': (data['total_steps'] ?? 0) as num,
+                'total_kms': (data['total_kms'] ?? 0.0) as num,
+                'profileUrl': data['profile_image_url'] ?? '',
+              };
+            }),
+          );
+          _lastDoc = snapshot.docs.last;
+          _hasMore = snapshot.docs.length == pageSize;
+        });
+      } else {
+        setState(() => _hasMore = false);
+      }
+    } catch (e) {
+      debugPrint('Error fetching leaderboard: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+        _isInitialLoad = false;
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    await _fetchPage(replace: true);
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Leaderboard refreshed")));
+    }
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoading &&
+        _hasMore) {
+      _fetchPage();
+    }
+  }
+
+  Widget _buildItem(BuildContext context, int index) {
+    final user = _items[index];
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundImage:
+            user['profileUrl'] != '' ? NetworkImage(user['profileUrl']) : null,
+        child:
+            user['profileUrl'] == ''
+                ? Text(
+                  user['first_name'].isNotEmpty
+                      ? user['first_name'][0].toUpperCase()
+                      : '?',
+                )
+                : null,
+      ),
+      title: Text(
+        '${user['first_name']} ${user['last_name']}',
+        style: TextStyle(
+          color:
+              (index < 3)
+                  ? const Color.fromARGB(255, 216, 172, 42)
+                  : Colors.black,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        '${_formatNumber(user['total_steps'])} steps • ${_formatNumber(user['total_kms'])} km',
+      ),
+      trailing: Text(
+        '#${index + 1}',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color:
+              (index < 3)
+                  ? const Color.fromARGB(255, 216, 172, 42)
+                  : Colors.black,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Full Leaderboard'),
-        backgroundColor: Colors.blue[600],
+        title: const Text("Full Leaderboard"),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _refresh),
+        ],
       ),
       body:
-          _leaderboard.isEmpty && _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _error.isNotEmpty
-              ? Center(child: Text(_error))
-              : Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12.0),
-                    child: Text(
-                      "📅 Leaderboard resets daily at 11:59 PM",
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.separated(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
+          _isInitialLoad
+              ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(
+                      "Fetching full leaderboard...",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
                       ),
-                      itemCount: _leaderboard.length,
-                      separatorBuilder: (context, index) => const Divider(),
-                      itemBuilder: (context, index) {
-                        final user = _leaderboard[index];
-                        final isTop3 = index < 3;
-                        final rankColor =
-                            isTop3 ? Colors.amber[800] : Colors.blueGrey[800];
-
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.grey[300],
-                            child: ClipOval(
-                              child: CachedNetworkImage(
-                                imageUrl: user['avatarUrl'],
-                                fit: BoxFit.cover,
-                                width: 40,
-                                height: 40,
-                                placeholder:
-                                    (context, url) =>
-                                        const Icon(Icons.person, size: 24),
-                                errorWidget:
-                                    (context, url, error) =>
-                                        const Icon(Icons.person, size: 24),
-                              ),
-                            ),
-                          ),
-
-                          title: Text(
-                            "#${index + 1} ${user['first_name']} ${user['last_name'] ?? ''}",
-                            style: TextStyle(
-                              color: rankColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Text(
-                            "${(user['total_km'] ?? 0.0).toStringAsFixed(2)} km • ${user['steps'] ?? 0} steps",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                        );
-                      },
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              )
+              : RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.builder(
+                  controller: _scrollController,
+                  itemCount:
+                      _items.length +
+                      (_isLoading || _hasMore ? 1 : 0), // loader slot
+                  itemBuilder: (context, index) {
+                    if (index < _items.length) {
+                      return _buildItem(context, index);
+                    } else if (_isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    } else {
+                      return const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Center(
+                          child: Text(
+                            "🎉 End of leaderboard",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
               ),
     );
   }
