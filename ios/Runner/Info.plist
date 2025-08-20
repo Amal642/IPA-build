@@ -7,8 +7,11 @@
 	<key>UIBackgroundModes</key>
 	<array>
 	<string>fetch</string>
+  	<string>remote-notification</string>
 	</array>
-<key>NSUserNotificationsUsageDescription</key>
+<key>FirebaseAppDelegateProxyEnabled</key>
+<true/>
+<key>NSUserNotificationUsageDescription</key>
 <string>This app uses notifications to remind you about your fitness progress.</string>
 
 	<key>NSPhotoLibraryUsageDescription</key>
