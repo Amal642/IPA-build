@@ -6,7 +6,7 @@
 	<string>This app uses motion data to count your steps even in the background.</string>
 	<key>UIBackgroundModes</key>
 	<array>
-    <string>processing</string>
+    <string>fitness</string>
 	<string>fetch</string>
 	</array>
 <key>NSUserNotificationsUsageDescription</key>
