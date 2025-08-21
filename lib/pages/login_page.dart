@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fitnesschallenge/pages/home_page.dart';
 import 'package:fitnesschallenge/pages/signup_page.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -211,7 +213,22 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     Image.asset('assets/images/logo_highscope.png', height: 100),
                     const SizedBox(height: 24),
-
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => const HomePage()),
+                        );
+                      },
+                      child: const Text('Continue as Guest'),
+                    ),
+                    //give a button to simulate crash for firebase crashlytics
+                    ElevatedButton(
+                      onPressed: () {
+                        FirebaseCrashlytics.instance.crash();
+                      },
+                      child: const Text('Simulate Crash'),
+                    ),
                     // Phone field
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
