@@ -7,20 +7,28 @@
 	<key>UIBackgroundModes</key>
 	<array>
 	<string>fetch</string>
-  	<string>remote-notification</string>
+	<string>remote-notification</string>
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
-	<key>NSUserNotificationUsageDescription</key>
-	<string>This app uses notifications to remind you about your fitness progress.</string>
-	
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to your photo library to select a profile picture.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-
 	<key>FirebaseCrashlyticsCollectionEnabled</key>
 	<true/>
+
+	<key>NSUserNotificationUsageDescription</key>
+	<string>This app uses notifications to remind you about your fitness progress.</string>
+
+		<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select a profile picture.</string>
+
+	<key>NSCameraUsageDescription</key>
+		<string>This app may use the camera to take your profile picture.</string>
+<!-- 🔑 Required for Firebase Phone Auth (network requests) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
