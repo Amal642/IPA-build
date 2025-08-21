@@ -33,11 +33,6 @@ workflows:
       - build/ios/ipa/*.ipa
       - build/ios/archive/*.xcarchive
 
-    integrations:
-      app_store_connect:
-        # Replace this with the integration ID from Codemagic UI
-        id: Q78YG2L77B
-
     publishing:
       app_store_connect:
         auth: integration   # ✅ tells Codemagic to use the integration you linked in the UI
