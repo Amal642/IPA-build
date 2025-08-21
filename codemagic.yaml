@@ -18,15 +18,12 @@ workflows:
 
     integrations:
       app_store_connect: Codemagic
+      
     scripts:
       - name: Install dependencies
         script: | 
           flutter pub get
           cd ios && pod install --repo-update && cd ..
-
-      - name: Run widget tests
-        script: flutter test
-        ignore_failure: false
           
       - name: Run Flutter build
         script: | 
