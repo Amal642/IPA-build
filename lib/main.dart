@@ -29,6 +29,12 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+
   // Activate App Check ONCE at startup
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.playIntegrity,
