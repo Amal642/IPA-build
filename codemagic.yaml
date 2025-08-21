@@ -9,7 +9,9 @@ workflows:
       xcode: 16.4
       cocoapods: default
       vars:
-        BUNDLE_ID: "com.aitechapps.fitnesschallenge" 
+        BUNDLE_ID: "com.aitechapps.fitnesschallenge"
+        APPLE_ID: Encrypted(...)
+        APP_SPECIFIC_PASSWORD: Encrypted(...)
 
     cache:
       cache_paths:
@@ -41,5 +43,7 @@ workflows:
 
     publishing:
       app_store_connect:
+        apple_id: $APPLE_ID
+        password: $APP_SPECIFIC_PASSWORD
         submit_to_testflight: true
         submit_to_app_store: false
