@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:health/health.dart'; // ✅ Add this for iOS HealthKit
 
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
@@ -30,10 +31,9 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
-
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
 
   // Activate App Check ONCE at startup
   await FirebaseAppCheck.instance.activate(
@@ -42,21 +42,28 @@ Future<void> main() async {
   );
   await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
 
-  // Background service init
-  await initializeService();
+  // Background service init (Android only)
+  if (Platform.isAndroid) {
+    await initializeService();
+  }
 
   // Crashlytics global handler
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  runZonedGuarded(() {
-    runApp(const MyApp());
-  }, (error, stackTrace) {
-    FirebaseCrashlytics.instance.recordError(error, stackTrace, fatal: true);
-  });
+  runZonedGuarded(
+    () {
+      runApp(const MyApp());
+    },
+    (error, stackTrace) {
+      FirebaseCrashlytics.instance.recordError(error, stackTrace, fatal: true);
+    },
+  );
 }
 
-// Initializes the background service
+// Initializes the background service (Android only)
 Future<void> initializeService() async {
+  if (!Platform.isAndroid) return;
+
   final service = FlutterBackgroundService();
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
@@ -69,7 +76,8 @@ Future<void> initializeService() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
 
   await service.configure(
@@ -84,7 +92,7 @@ Future<void> initializeService() async {
       foregroundServiceNotificationId: notificationId,
     ),
     iosConfiguration: IosConfiguration(
-      autoStart: true,
+      autoStart: false, // ✅ Changed to false - iOS handles differently
       onForeground: onStart,
       onBackground: onIosBackground,
     ),
@@ -108,31 +116,31 @@ void onStart(ServiceInstance service) async {
 
   int stepsOnDayStart = 0;
   int stepsToday = 0;
-  int totalSteps = 0; // 🔥 NEW
+  int totalSteps = 0;
   String lastSavedDay = "";
   int _lastStepCount = 0;
   DateTime _lastStepTimestamp = DateTime.now();
 
   StreamSubscription<StepCount>? stepCountStreamSubscription;
   Timer? midnightTimer;
+  Timer? healthKitTimer; // ✅ For iOS HealthKit polling
 
-  String getTodayDateKey() =>
-      DateFormat('yyyy-MM-dd').format(DateTime.now());
+  String getTodayDateKey() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-  debugPrint("✅ [Service] Started.");
+  debugPrint("✅ [Service] Started on ${Platform.operatingSystem}");
 
   // Helper: persist steps safely
   Future<void> persistSteps(int steps, int total, String dayKey) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('stepsToday', steps);
-    await prefs.setInt('totalSteps', total); // 🔥 NEW
+    await prefs.setInt('totalSteps', total);
     await prefs.setString('lastSavedDay', dayKey);
     await prefs.setInt('stepsOnDayStart', stepsOnDayStart);
   }
 
-  // Helper: update notification
+  // Helper: update notification (Android only)
   Future<void> updateNotification(int steps) async {
-    if (service is AndroidServiceInstance) {
+    if (Platform.isAndroid && service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
         title: "MBM fitness challenge 2025",
         content: "Today's Steps: $steps",
@@ -140,23 +148,79 @@ void onStart(ServiceInstance service) async {
     }
   }
 
+  // ✅ iOS HealthKit step fetching
+  Future<int> getHealthKitSteps() async {
+    if (!Platform.isIOS) return 0;
+
+    try {
+      Health health = Health();
+
+      // Define the types to get
+      var types = [HealthDataType.STEPS];
+
+      // Get permissions
+      bool authorized = await health.requestAuthorization(types);
+      if (!authorized) {
+        debugPrint("❌ HealthKit not authorized");
+        return 0;
+      }
+
+      // Get today's date range
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
+
+      // Fetch the data
+      List<HealthDataPoint> healthData = await health.getHealthDataFromTypes(
+        types: types,
+        startTime: startOfDay,
+        endTime: now,
+      );
+
+      // Sum up steps
+      int steps = 0;
+      for (var point in healthData) {
+        if (point.type == HealthDataType.STEPS) {
+          steps += (point.value as num).round();
+        }
+      }
+
+      debugPrint("📱 HealthKit steps: $steps");
+      return steps;
+    } catch (e, st) {
+      debugPrint("❌ HealthKit error: $e");
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        st,
+        reason: 'HealthKit error',
+      );
+      return 0;
+    }
+  }
+
   // 🔔 Schedule midnight reset
   void scheduleMidnightReset() {
     midnightTimer?.cancel();
     final now = DateTime.now();
-    final nextMidnight =
-        DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final nextMidnight = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: 1));
     final duration = nextMidnight.difference(now);
 
     midnightTimer = Timer(duration, () async {
       // Reset ONLY daily steps
-      stepsOnDayStart = _lastStepCount;
+      if (Platform.isAndroid) {
+        stepsOnDayStart = _lastStepCount;
+      }
       stepsToday = 0;
       lastSavedDay = getTodayDateKey();
-      await persistSteps(stepsToday, totalSteps, lastSavedDay); // ✅ MODIFIED
+      await persistSteps(stepsToday, totalSteps, lastSavedDay);
       await updateNotification(stepsToday);
 
-      debugPrint("🌙 Midnight reset -> stepsToday = 0 (total stays $totalSteps)");
+      debugPrint(
+        "🌙 Midnight reset -> stepsToday = 0 (total stays $totalSteps)",
+      );
 
       // Schedule again for next midnight
       scheduleMidnightReset();
@@ -166,76 +230,135 @@ void onStart(ServiceInstance service) async {
   // Load saved state
   final prefs = await SharedPreferences.getInstance();
   stepsToday = prefs.getInt('stepsToday') ?? 0;
-  totalSteps = prefs.getInt('totalSteps') ?? 0; // 🔥 NEW
+  totalSteps = prefs.getInt('totalSteps') ?? 0;
   stepsOnDayStart = prefs.getInt('stepsOnDayStart') ?? 0;
   lastSavedDay = prefs.getString('lastSavedDay') ?? getTodayDateKey();
   await updateNotification(stepsToday);
   scheduleMidnightReset();
 
-  try {
-    stepCountStreamSubscription = Pedometer.stepCountStream.listen(
-      (StepCount event) async {
+  // ✅ Platform-specific step tracking
+  if (Platform.isAndroid) {
+    // Android: Use Pedometer package
+    try {
+      stepCountStreamSubscription = Pedometer.stepCountStream.listen(
+        (StepCount event) async {
+          final todayKey = getTodayDateKey();
+
+          // Reset daily values when a new day starts
+          if (todayKey != lastSavedDay) {
+            lastSavedDay = todayKey;
+            stepsOnDayStart = event.steps;
+            stepsToday = 0;
+            _lastStepCount = event.steps;
+            await persistSteps(stepsToday, totalSteps, lastSavedDay);
+            await updateNotification(stepsToday);
+          }
+
+          final int newStepsDetected = event.steps - _lastStepCount;
+
+          if (newStepsDetected > 0) {
+            final now = DateTime.now();
+
+            // Debounce filter
+            if (now.difference(_lastStepTimestamp).inMilliseconds <
+                MIN_TIME_BETWEEN_STEPS_MS) {
+              return;
+            }
+
+            _lastStepTimestamp = now;
+            _lastStepCount = event.steps;
+
+            final newStepsToday = mathMax0(event.steps - stepsOnDayStart);
+            if (newStepsToday != stepsToday) {
+              final int delta = newStepsToday - stepsToday;
+              stepsToday = newStepsToday;
+              totalSteps += delta;
+
+              // Persist immediately
+              await persistSteps(stepsToday, totalSteps, lastSavedDay);
+              await updateNotification(stepsToday);
+
+              service.invoke('update', {
+                'stepsToday': stepsToday,
+                'totalSteps': totalSteps,
+              });
+            }
+          }
+        },
+        onError: (error, st) {
+          FirebaseCrashlytics.instance.recordError(
+            error,
+            st,
+            reason: 'Pedometer stream error',
+          );
+        },
+        cancelOnError: true,
+      );
+    } catch (e, st) {
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        st,
+        reason: 'Critical: step listener failed',
+      );
+    }
+  } else if (Platform.isIOS) {
+    // iOS: Use HealthKit with periodic polling
+    healthKitTimer = Timer.periodic(const Duration(minutes: 5), (timer) async {
+      try {
         final todayKey = getTodayDateKey();
 
         // Reset daily values when a new day starts
         if (todayKey != lastSavedDay) {
           lastSavedDay = todayKey;
-          stepsOnDayStart = event.steps;
           stepsToday = 0;
-          _lastStepCount = event.steps;
-          await persistSteps(stepsToday, totalSteps, lastSavedDay); // ✅ MODIFIED
-          await updateNotification(stepsToday);
+          await persistSteps(stepsToday, totalSteps, lastSavedDay);
         }
 
-        final int newStepsDetected = event.steps - _lastStepCount;
+        final healthKitSteps = await getHealthKitSteps();
 
-        if (newStepsDetected > 0) {
-          final now = DateTime.now();
+        if (healthKitSteps > stepsToday) {
+          final delta = healthKitSteps - stepsToday;
+          stepsToday = healthKitSteps;
+          totalSteps += delta;
 
-          // ✅ Debounce filter
-          if (now.difference(_lastStepTimestamp).inMilliseconds <
-              MIN_TIME_BETWEEN_STEPS_MS) {
-            return;
-          }
+          await persistSteps(stepsToday, totalSteps, lastSavedDay);
 
-          _lastStepTimestamp = now;
-          _lastStepCount = event.steps;
+          service.invoke('update', {
+            'stepsToday': stepsToday,
+            'totalSteps': totalSteps,
+          });
 
-          final newStepsToday = mathMax0(event.steps - stepsOnDayStart);
-          if (newStepsToday != stepsToday) {
-            final int delta = newStepsToday - stepsToday;
-            stepsToday = newStepsToday;
-
-            // 🔥 Update total steps as well
-            totalSteps += delta;
-
-            // Persist immediately
-            await persistSteps(stepsToday, totalSteps, lastSavedDay);
-
-            await updateNotification(stepsToday);
-
-            service.invoke('update', {
-              'stepsToday': stepsToday,
-              'totalSteps': totalSteps,
-            });
-          }
+          debugPrint(
+            "📊 iOS steps updated: today=$stepsToday, total=$totalSteps",
+          );
         }
-      },
-      onError: (error, st) {
-        FirebaseCrashlytics.instance.recordError(error, st,
-            reason: 'Pedometer stream error');
-      },
-      cancelOnError: true,
-    );
-  } catch (e, st) {
-    FirebaseCrashlytics.instance
-        .recordError(e, st, reason: 'Critical: step listener failed');
+      } catch (e, st) {
+        FirebaseCrashlytics.instance.recordError(
+          e,
+          st,
+          reason: 'iOS HealthKit polling error',
+        );
+      }
+    });
+
+    // Initial HealthKit fetch
+    final initialSteps = await getHealthKitSteps();
+    if (initialSteps > 0) {
+      stepsToday = initialSteps;
+      await persistSteps(stepsToday, totalSteps, lastSavedDay);
+
+      service.invoke('update', {
+        'stepsToday': stepsToday,
+        'totalSteps': totalSteps,
+      });
+    }
   }
 
   service.on('stopService').listen((event) async {
     stepCountStreamSubscription?.cancel();
     midnightTimer?.cancel();
-    await persistSteps(stepsToday, totalSteps, lastSavedDay); // ✅ MODIFIED
+    healthKitTimer?.cancel(); // ✅ Cancel iOS timer
+    await persistSteps(stepsToday, totalSteps, lastSavedDay);
     service.stopSelf();
   });
 }
@@ -277,7 +400,8 @@ class AuthGate extends StatelessWidget {
         if (snapshot.hasError) {
           return const Scaffold(
             body: Center(
-                child: Text("Something went wrong. Please try again.")),
+              child: Text("Something went wrong. Please try again."),
+            ),
           );
         }
         if (snapshot.hasData) {
@@ -300,6 +424,7 @@ class PermissionWrapper extends StatefulWidget {
 class _PermissionWrapperState extends State<PermissionWrapper> {
   bool _hasPermission = false;
   bool _permanentlyDenied = false;
+  String _permissionMessage = '';
 
   @override
   void initState() {
@@ -320,10 +445,11 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
         return;
       }
 
-      final results = await [
-        Permission.activityRecognition,
-        Permission.notification,
-      ].request();
+      final results =
+          await [
+            Permission.activityRecognition,
+            Permission.notification,
+          ].request();
 
       final allGranted = results.values.every((p) => p.isGranted);
       final anyForever = results.values.any((p) => p.isPermanentlyDenied);
@@ -331,12 +457,40 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
       setState(() {
         _hasPermission = allGranted;
         _permanentlyDenied = anyForever;
+        _permissionMessage =
+            'This app needs permission to track your physical activity (for step counting) and to show low-importance notifications while counting steps.';
       });
     } else if (Platform.isIOS) {
-      setState(() {
-        _hasPermission = true;
-        _permanentlyDenied = false;
-      });
+      // ✅ iOS: Check HealthKit permissions
+      try {
+        Health health = Health();
+        var types = [HealthDataType.STEPS];
+
+        bool hasPermission = await health.hasPermissions(types) ?? false;
+
+        if (!hasPermission) {
+          bool authorized = await health.requestAuthorization(types);
+          setState(() {
+            _hasPermission = authorized;
+            _permanentlyDenied = !authorized;
+            _permissionMessage =
+                'This app needs access to your Health data to track steps. Please allow access to "Steps" in the Health app.';
+          });
+        } else {
+          setState(() {
+            _hasPermission = true;
+            _permanentlyDenied = false;
+          });
+        }
+      } catch (e) {
+        debugPrint("❌ iOS Health permission error: $e");
+        setState(() {
+          _hasPermission = false;
+          _permanentlyDenied = true;
+          _permissionMessage =
+              'Unable to access Health data. Please check your Health app settings.';
+        });
+      }
     }
   }
 
@@ -353,25 +507,63 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'This app needs permission to track your physical activity (for step counting) and to show low-importance notifications while counting steps.',
-                textAlign: TextAlign.center,
+              Icon(
+                Platform.isIOS
+                    ? Icons.health_and_safety
+                    : Icons.directions_walk,
+                size: 64,
+                color: Colors.blue,
               ),
               const SizedBox(height: 16),
+              Text(
+                _permissionMessage.isEmpty
+                    ? 'This app needs permission to track your steps.'
+                    : _permissionMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _checkPermission,
-                child: const Text('Grant Permission'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
+                ),
+                child: Text(
+                  Platform.isIOS ? 'Allow Health Access' : 'Grant Permission',
+                ),
               ),
               if (_permanentlyDenied) ...[
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: openAppSettings,
-                  child: const Text('Open App Settings'),
+                  onPressed: () async {
+                    if (Platform.isIOS) {
+                      // On iOS, direct users to Health app
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Please open the Health app → Data Access & Devices → [Your App] → Turn on Steps',
+                          ),
+                          duration: Duration(seconds: 5),
+                        ),
+                      );
+                    } else {
+                      await openAppSettings();
+                    }
+                  },
+                  child: Text(
+                    Platform.isIOS ? 'Open Health App' : 'Open App Settings',
+                  ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Permission was blocked. Please enable “Physical activity” and “Notifications” in Settings.',
+                Text(
+                  Platform.isIOS
+                      ? 'Please enable "Steps" access in the Health app for this app to work properly.'
+                      : 'Permission was blocked. Please enable "Physical activity" and "Notifications" in Settings.',
                   textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ],

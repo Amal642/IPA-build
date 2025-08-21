@@ -2,26 +2,80 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- ✅ Step Tracking Permissions -->
 	<key>NSMotionUsageDescription</key>
 	<string>This app uses motion data to count your steps even in the background.</string>
+	
+	<!-- ✅ REQUIRED for HealthKit step tracking -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>This app needs access to your health data to read step count and track your fitness progress.</string>
+	
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>This app needs to update your health data to record step count and fitness activities.</string>
+
+	<!-- ✅ Background Processing for Step Tracking -->
 	<key>UIBackgroundModes</key>
 	<array>
-	<string>fetch</string>
-  	<string>remote-notification</string>
+		<string>fetch</string>
+		<string>processing</string>
+		<string>remote-notification</string>
 	</array>
+
+	<!-- ✅ Firebase Configuration -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
-	<key>NSUserNotificationUsageDescription</key>
-	<string>This app uses notifications to remind you about your fitness progress.</string>
-	
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to your photo library to select a profile picture.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-
 	<key>FirebaseCrashlyticsCollectionEnabled</key>
 	<true/>
 
+	<!-- ✅ Notification Permissions -->
+	<key>NSUserNotificationUsageDescription</key>
+	<string>This app uses notifications to remind you about your fitness progress.</string>
+
+	<!-- ✅ Photo/Camera Permissions -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select a profile picture.</string>
+
+	<key>NSCameraUsageDescription</key>
+	<string>This app may use the camera to take your profile picture.</string>
+
+	<!-- ✅ Network Security for Firebase Phone Auth -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>googleapis.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>firebaseapp.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!-- ✅ Push Notifications for Phone Auth -->
+	<key>UIUserNotificationSettings</key>
+	<dict>
+		<key>UIUserNotificationTypesAlert</key>
+		<true/>
+		<key>UIUserNotificationTypesSound</key>
+		<true/>
+		<key>UIUserNotificationTypesBadge</key>
+		<true/>
+	</dict>
+
+	<!-- ✅ Standard iOS Configuration -->
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

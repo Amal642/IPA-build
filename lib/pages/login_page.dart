@@ -8,7 +8,6 @@ import 'package:fitnesschallenge/pages/signup_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
-
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -82,11 +81,35 @@ class _LoginPageState extends State<LoginPage> {
         timeout: const Duration(seconds: 60),
         forceResendingToken: forceResendingToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Disabled auto sign-in; user must type OTP manually
+          // ✅ FIXED: Enable auto sign-in for iOS
+          print('Auto verification completed');
+          try {
+            await _signInWithCredentialAndRoute(credential);
+          } catch (e) {
+            print('Auto sign-in failed: $e');
+            // Continue with manual OTP entry
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           setState(() => isLoading = false);
-          _showSnack(e.message ?? 'Verification failed', error: true);
+          String errorMessage = 'Verification failed';
+          
+          // Better error handling for iOS
+          switch (e.code) {
+            case 'invalid-phone-number':
+              errorMessage = 'Invalid phone number format';
+              break;
+            case 'too-many-requests':
+              errorMessage = 'Too many requests. Please try again later';
+              break;
+            case 'operation-not-allowed':
+              errorMessage = 'Phone authentication is not enabled';
+              break;
+            default:
+              errorMessage = e.message ?? 'Verification failed';
+          }
+          
+          _showSnack(errorMessage, error: true);
         },
         codeSent: (String verId, int? resendToken) async {
           verificationId = verId;
@@ -96,9 +119,11 @@ class _LoginPageState extends State<LoginPage> {
             isLoading = false;
           });
           _startResendTimer();
+          _showSnack('OTP sent successfully');
         },
         codeAutoRetrievalTimeout: (String verId) {
           verificationId = verId;
+          print('Auto retrieval timeout');
         },
       );
     } on SocketException {
@@ -134,6 +159,21 @@ class _LoginPageState extends State<LoginPage> {
         smsCode: smsCode,
       );
       await _signInWithCredentialAndRoute(credential);
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = 'Invalid OTP';
+      
+      switch (e.code) {
+        case 'invalid-verification-code':
+          errorMessage = 'Invalid OTP code';
+          break;
+        case 'session-expired':
+          errorMessage = 'OTP expired. Please request a new one';
+          break;
+        default:
+          errorMessage = e.message ?? 'Invalid OTP';
+      }
+      
+      _showSnack(errorMessage, error: true);
     } catch (e) {
       _showSnack('Invalid OTP', error: true);
     } finally {
@@ -147,45 +187,51 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signInWithCredentialAndRoute(PhoneAuthCredential credential) async {
-    final userCred = await _auth.signInWithCredential(credential);
-    final user = userCred.user;
-    if (user == null) {
-      _showSnack('Login failed. Try again.', error: true);
-      return;
-    }
-
-    final users = FirebaseFirestore.instance.collection('users');
-
-    final uidDoc = await users.doc(user.uid).get();
-
-    bool exists = uidDoc.exists;
-    if (!exists) {
-      final fullPhone = user.phoneNumber ?? '';
-      if (fullPhone.isNotEmpty) {
-        final snap = await users.where('phone', isEqualTo: fullPhone).limit(1).get();
-        exists = snap.docs.isNotEmpty;
+    try {
+      final userCred = await _auth.signInWithCredential(credential);
+      final user = userCred.user;
+      if (user == null) {
+        _showSnack('Login failed. Try again.', error: true);
+        return;
       }
-    }
 
-    if (!exists) {
-      try {
-        await _auth.signOut();
-      } catch (_) {}
+      final users = FirebaseFirestore.instance.collection('users');
+
+      final uidDoc = await users.doc(user.uid).get();
+
+      bool exists = uidDoc.exists;
+      if (!exists) {
+        final fullPhone = user.phoneNumber ?? '';
+        if (fullPhone.isNotEmpty) {
+          final snap = await users.where('phone', isEqualTo: fullPhone).limit(1).get();
+          exists = snap.docs.isNotEmpty;
+        }
+      }
+
+      if (!exists) {
+        try {
+          await _auth.signOut();
+        } catch (_) {}
+        if (!mounted) return;
+        _showSnack('User not registered, please sign up first', error: true);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginSignupPage()),
+        );
+        return;
+      }
+
       if (!mounted) return;
-      _showSnack('User not registered, please sign up first', error: true);
+      _showSnack('Login success');
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginSignupPage()),
+        MaterialPageRoute(builder: (_) => const HomePage()),
       );
-      return;
+    } on FirebaseAuthException catch (e) {
+      throw e; // Re-throw Firebase exceptions to be handled by caller
+    } catch (e) {
+      throw Exception('Sign in failed: $e');
     }
-
-    if (!mounted) return;
-    _showSnack('Login success');
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomePage()),
-    );
   }
 
   @override
@@ -222,13 +268,17 @@ class _LoginPageState extends State<LoginPage> {
                       },
                       child: const Text('Continue as Guest'),
                     ),
-                    //give a button to simulate crash for firebase crashlytics
-                    ElevatedButton(
-                      onPressed: () {
-                        FirebaseCrashlytics.instance.crash();
-                      },
-                      child: const Text('Simulate Crash'),
-                    ),
+                    // Remove or comment out this crash button in production
+                    // Only show in debug mode
+                      ElevatedButton(
+                        onPressed: () {
+                          FirebaseCrashlytics.instance.crash();
+                        },
+                        child: const Text('Simulate Crash'),
+                      ),
+
+                    const SizedBox(height: 24),
+
                     // Phone field
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -305,6 +355,14 @@ class _LoginPageState extends State<LoginPage> {
                                 } else if (value.isEmpty && i > 0) {
                                   FocusScope.of(context).previousFocus();
                                 }
+                                
+                                // Auto-verify when all fields are filled
+                                if (i == 5 && value.isNotEmpty) {
+                                  final allFilled = otpControllers.every((c) => c.text.isNotEmpty);
+                                  if (allFilled && !_verifying) {
+                                    _verifyOTP();
+                                  }
+                                }
                               },
                             ),
                           );
@@ -317,7 +375,7 @@ class _LoginPageState extends State<LoginPage> {
                         onPressed: _verifying ? null : _verifyOTP,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         ),
                         child: _verifying ? const Text('Verifying...') : const Text('Verify OTP'),
                       ),

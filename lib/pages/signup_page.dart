@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // ✅ Add this for kDebugMode
 import 'package:image_picker/image_picker.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/services.dart';
@@ -56,6 +57,7 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
   int? forceResendingToken;
   bool otpSent = false;
   bool isLoading = false;
+  bool _verifying = false; // ✅ Add verification state
   int resendTimeout = 30;
   Timer? _resendTimer;
 
@@ -95,6 +97,13 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
     });
   }
 
+  // ✅ Improved phone validation
+  bool _isValidPhone(String phone, String code) {
+    if (code == '+971') return phone.length == 9;
+    if (code == '+91') return phone.length == 10;
+    return phone.isNotEmpty; // fallback
+  }
+
   Future<File?> _pickFromGallery() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -118,6 +127,15 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
     if (!_formKey.currentState!.validate()) return;
 
     final phone = phoneController.text.trim();
+
+    // ✅ Enhanced phone validation
+    if (!_isValidPhone(phone, _selectedCountryCode)) {
+      final country = _selectedCountryCode == '+971' ? 'UAE' : 'Indian';
+      final len = _selectedCountryCode == '+971' ? '9' : '10';
+      _showSnack('Enter a valid $len-digit $country phone number', error: true);
+      return;
+    }
+
     final fullPhone = '$_selectedCountryCode$phone';
 
     final hasNet = await _hasInternet();
@@ -134,16 +152,42 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
         timeout: const Duration(seconds: 60),
         forceResendingToken: forceResendingToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
+          // ✅ FIXED: Enable auto sign-in for iOS
+          debugPrint('Auto verification completed for signup');
           try {
-            await _auth.signInWithCredential(credential);
-            await _afterAuthSuccess();
+            final userCred = await _auth.signInWithCredential(credential);
+            if (userCred.user != null) {
+              await _afterAuthSuccess();
+            }
           } catch (e) {
-            _showSnack('Auto verification failed: $e', error: true);
+            debugPrint('Auto sign-in failed: $e');
+            // Continue with manual OTP entry
+            _showSnack('Please enter the OTP manually', error: false);
           }
         },
         verificationFailed: (FirebaseAuthException e) {
-          _showSnack(e.message ?? 'Verification failed', error: true);
           if (mounted) setState(() => isLoading = false);
+          
+          // ✅ Better error handling for iOS
+          String errorMessage = 'Verification failed';
+          switch (e.code) {
+            case 'invalid-phone-number':
+              errorMessage = 'Invalid phone number format';
+              break;
+            case 'too-many-requests':
+              errorMessage = 'Too many requests. Please try again later';
+              break;
+            case 'operation-not-allowed':
+              errorMessage = 'Phone authentication is not enabled';
+              break;
+            case 'quota-exceeded':
+              errorMessage = 'SMS quota exceeded. Please try again later';
+              break;
+            default:
+              errorMessage = e.message ?? 'Verification failed';
+          }
+          
+          _showSnack(errorMessage, error: true);
         },
         codeSent: (String verId, int? resendToken) {
           if (!mounted) return;
@@ -154,12 +198,16 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
             forceResendingToken = resendToken;
           });
           _startResendTimer();
-          _showSnack('OTP sent.');
+          _showSnack('OTP sent successfully');
         },
         codeAutoRetrievalTimeout: (String verId) {
           verificationId = verId;
+          debugPrint('Auto retrieval timeout for signup');
         },
       );
+    } on SocketException {
+      _showSnack('No internet connection', error: true);
+      if (mounted) setState(() => isLoading = false);
     } catch (e) {
       _showSnack('Error sending OTP: $e', error: true);
       if (mounted) setState(() => isLoading = false);
@@ -167,12 +215,20 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
   }
 
   Future<void> _verifyOTP(String code) async {
+    if (_verifying) return; // ✅ Prevent multiple calls
+    
     if (verificationId == null || code.length != 6) {
       _showSnack('Please enter the 6-digit OTP.', error: true);
       return;
     }
 
-    if (mounted) setState(() => isLoading = true);
+    if (mounted) {
+      setState(() {
+        isLoading = true;
+        _verifying = true; // ✅ Set verification state
+      });
+    }
+
     try {
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId!,
@@ -184,11 +240,47 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
         await _afterAuthSuccess();
       } else {
         _showSnack('OTP verification failed.', error: true);
-        if (mounted) setState(() => isLoading = false);
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+            _verifying = false;
+          });
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      // ✅ Better Firebase error handling
+      String errorMessage = 'OTP verification failed';
+      
+      switch (e.code) {
+        case 'invalid-verification-code':
+          errorMessage = 'Invalid OTP code. Please check and try again';
+          break;
+        case 'session-expired':
+          errorMessage = 'OTP expired. Please request a new one';
+          setState(() => otpSent = false); // Allow user to request new OTP
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Too many attempts. Please try again later';
+          break;
+        default:
+          errorMessage = e.message ?? 'OTP verification failed';
+      }
+      
+      _showSnack(errorMessage, error: true);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _verifying = false;
+        });
       }
     } catch (e) {
       _showSnack('OTP verification failed: $e', error: true);
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _verifying = false;
+        });
+      }
     }
   }
 
@@ -196,7 +288,12 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
     final user = _auth.currentUser;
     if (user == null) {
       _showSnack('User not found after auth.', error: true);
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _verifying = false;
+        });
+      }
       return;
     }
 
@@ -213,7 +310,12 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
       }
     } catch (e) {
       _showSnack('Could not upload profile image: $e', error: true);
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _verifying = false;
+        });
+      }
       return;
     }
 
@@ -233,18 +335,35 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
         });
         _showSnack('Sign up successful!');
       } else {
-        _showSnack('Welcome back! Logged in.');
+        // Update existing user data
+        await userDoc.update({
+          "first_name": fnameController.text.trim(),
+          "last_name": lnameController.text.trim(),
+          "email": emailController.text.trim(),
+          "profile_image_url": imageUrl,
+          "updated_at": Timestamp.now(),
+        });
+        _showSnack('Welcome back! Profile updated.');
       }
 
       if (!mounted) return;
-      setState(() => isLoading = false);
+      setState(() {
+        isLoading = false;
+        _verifying = false;
+      });
+      
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomePage()),
         (route) => false,
       );
     } catch (e) {
       _showSnack('Saving profile failed: $e', error: true);
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _verifying = false;
+        });
+      }
     }
   }
 
@@ -288,11 +407,8 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                             labelText: 'First Name',
                             border: InputBorder.none,
                           ),
-                          validator:
-                              (v) =>
-                                  (v == null || v.trim().isEmpty)
-                                      ? 'Required'
-                                      : null,
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Required' : null,
                         ),
                       ),
                       _boxedField(
@@ -302,11 +418,8 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                             labelText: 'Last Name',
                             border: InputBorder.none,
                           ),
-                          validator:
-                              (v) =>
-                                  (v == null || v.trim().isEmpty)
-                                      ? 'Required'
-                                      : null,
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Required' : null,
                         ),
                       ),
                       _boxedField(
@@ -320,8 +433,9 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                           validator: (v) {
                             final s = (v ?? '').trim();
                             if (s.isEmpty) return 'Required';
-                            if (!s.contains('@') || !s.contains('.'))
+                            if (!s.contains('@') || !s.contains('.')) {
                               return 'Invalid email';
+                            }
                             return null;
                           },
                         ),
@@ -340,53 +454,49 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                       Wrap(
                         spacing: 10,
                         runSpacing: 10,
-                        children:
-                            avatarUrls.map((path) {
-                              final selected = _selectedAvatarUrl == path;
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedAvatarUrl = selected ? null : path;
-                                    if (_selectedAvatarUrl != null)
-                                      _pickedImage = null;
-                                  });
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color:
-                                          selected
-                                              ? Colors.blue
-                                              : Colors.transparent,
-                                      width: 2,
-                                    ),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: CircleAvatar(
-                                    backgroundImage: NetworkImage(path),
-                                    radius: 30,
-                                  ),
+                        children: avatarUrls.map((path) {
+                          final selected = _selectedAvatarUrl == path;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedAvatarUrl = selected ? null : path;
+                                if (_selectedAvatarUrl != null) {
+                                  _pickedImage = null;
+                                }
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: selected ? Colors.blue : Colors.transparent,
+                                  width: 2,
                                 ),
-                              );
-                            }).toList(),
+                                shape: BoxShape.circle,
+                              ),
+                              child: CircleAvatar(
+                                backgroundImage: NetworkImage(path),
+                                radius: 30,
+                              ),
+                            ),
+                          );
+                        }).toList(),
                       ),
 
                       const SizedBox(height: 12),
                       TextButton.icon(
                         icon: const Icon(Icons.photo),
                         label: const Text('Pick from Gallery'),
-                        onPressed:
-                            isLoading
-                                ? null
-                                : () async {
-                                  final file = await _pickFromGallery();
-                                  if (file != null) {
-                                    setState(() {
-                                      _pickedImage = file;
-                                      _selectedAvatarUrl = null;
-                                    });
-                                  }
-                                },
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                final file = await _pickFromGallery();
+                                if (file != null) {
+                                  setState(() {
+                                    _pickedImage = file;
+                                    _selectedAvatarUrl = null;
+                                  });
+                                }
+                              },
                       ),
 
                       if (_pickedImage != null)
@@ -417,11 +527,11 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                                   child: Text('🇮🇳 +91'),
                                 ),
                               ],
-                              onChanged:
-                                  (v) => setState(
-                                    () => _selectedCountryCode = v ?? '+971',
-                                  ),
+                              onChanged: (v) => setState(
+                                () => _selectedCountryCode = v ?? '+971',
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: TextFormField(
                                 controller: phoneController,
@@ -430,11 +540,8 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                                   labelText: 'Phone Number',
                                   border: InputBorder.none,
                                 ),
-                                validator:
-                                    (v) =>
-                                        (v == null || v.trim().isEmpty)
-                                            ? 'Required'
-                                            : null,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty) ? 'Required' : null,
                               ),
                             ),
                           ],
@@ -446,6 +553,7 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                         onPressed: isLoading ? null : _sendOTP,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                         ),
                         child: const Text('Send OTP'),
                       ),
@@ -454,7 +562,9 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                     if (otpSent) ...[
                       const SizedBox(height: 16),
                       Text(
-                        'Enter the 6-digit OTP sent to ${phoneController.text}',
+                        'Enter the 6-digit OTP sent to $_selectedCountryCode${phoneController.text}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16),
                       ),
                       const SizedBox(height: 12),
 
@@ -467,20 +577,26 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                               textAlign: TextAlign.center,
                               keyboardType: TextInputType.number,
                               maxLength: 1,
-                              decoration: const InputDecoration(
+                              controller: _otpControllers[index],
+                              decoration: InputDecoration(
                                 counterText: '',
-                                border: OutlineInputBorder(),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
                               onChanged: (value) {
-                                if (value.isNotEmpty) {
-                                  if (index < 5) {
-                                    FocusScope.of(
-                                      context,
-                                    ).nextFocus(); // move to next box
-                                  } else {
-                                    FocusScope.of(
-                                      context,
-                                    ).unfocus(); // close keyboard at last box
+                                if (value.isNotEmpty && index < 5) {
+                                  FocusScope.of(context).nextFocus();
+                                } else if (value.isEmpty && index > 0) {
+                                  FocusScope.of(context).previousFocus();
+                                }
+                                
+                                // ✅ Auto-verify when all fields are filled
+                                if (index == 5 && value.isNotEmpty) {
+                                  final allFilled = _otpControllers.every((c) => c.text.isNotEmpty);
+                                  if (allFilled && !_verifying) {
+                                    final code = _collectOtp();
+                                    _verifyOTP(code);
                                   }
                                 }
                               },
@@ -492,7 +608,6 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
                                   }
                                 }
                               },
-                              controller: _otpControllers[index],
                             ),
                           );
                         }),
@@ -500,28 +615,32 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
 
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed:
-                            isLoading
-                                ? null
-                                : () {
-                                  final code = _collectOtp();
-                                  if (code.length == 6) {
-                                    _verifyOTP(code);
-                                  } else {
-                                    _showSnack(
-                                      'Please enter all 6 digits',
-                                      error: true,
-                                    );
-                                  }
-                                },
-                        child: const Text('Verify OTP'),
+                        onPressed: _verifying 
+                            ? null 
+                            : () {
+                                final code = _collectOtp();
+                                if (code.length == 6) {
+                                  _verifyOTP(code);
+                                } else {
+                                  _showSnack(
+                                    'Please enter all 6 digits',
+                                    error: true,
+                                  );
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                        ),
+                        child: _verifying 
+                            ? const Text('Verifying...') 
+                            : const Text('Verify OTP'),
                       ),
 
                       TextButton(
-                        onPressed:
-                            (resendTimeout == 0 && !isLoading)
-                                ? _sendOTP
-                                : null,
+                        onPressed: (resendTimeout == 0 && !isLoading && !_verifying)
+                            ? _sendOTP
+                            : null,
                         child: Text(
                           resendTimeout == 0
                               ? 'Resend OTP'
