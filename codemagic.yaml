@@ -35,9 +35,7 @@ workflows:
 
     publishing:
       app_store_connect:
-        auth:
-          issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-          key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-          private_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        auth: integration   # ✅ tells Codemagic to use the integration you linked in the UI
         submit_to_testflight: true
         submit_to_app_store: false
+
