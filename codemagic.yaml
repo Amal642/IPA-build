@@ -10,9 +10,6 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "com.aitechapps.fitnesschallenge" 
-        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
-        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
-        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
 
     cache:
       cache_paths:
