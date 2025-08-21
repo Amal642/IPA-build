@@ -9,17 +9,18 @@
 	<string>fetch</string>
   	<string>remote-notification</string>
 	</array>
-<key>FirebaseAppDelegateProxyEnabled</key>
-<true/>
-<key>NSUserNotificationUsageDescription</key>
-<string>This app uses notifications to remind you about your fitness progress.</string>
-
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>This app uses notifications to remind you about your fitness progress.</string>
+	
 	<key>NSPhotoLibraryUsageDescription</key>
-<string>This app needs access to your photo library to select a profile picture.</string>
-<key>ITSAppUsesNonExemptEncryption</key>
-<false/>
+	<string>This app needs access to your photo library to select a profile picture.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 
-
+	<key>FirebaseCrashlyticsCollectionEnabled</key>
+	<true/>
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
