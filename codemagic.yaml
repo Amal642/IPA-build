@@ -31,7 +31,10 @@ workflows:
 
       - name: Run Crashlytics dSYM upload
         script: | 
-          flutter pub run firebase_crashlytics:upload-symbols --ios
+          # Ensure ios_crashlytics.sh is executable
+          chmod +x ios_crashlytics.sh
+          ./ios_crashlytics.sh
+
 
     artifacts:
       - build/ios/ipa/*.ipa
