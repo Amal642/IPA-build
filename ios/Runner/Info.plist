@@ -12,7 +12,11 @@
 	
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>This app needs to update your health data to record step count and fitness activities.</string>
-
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.aitechapps.fitnesschallenge.background-refresh</string>
+		<string>com.aitechapps.fitnesschallenge.background-processing</string>
+	</array>
 	<!-- ✅ Background Processing for Step Tracking -->
 	<key>UIBackgroundModes</key>
 	<array>
