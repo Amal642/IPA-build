@@ -10,6 +10,14 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "com.aitechapps.fitnesschallenge"
+        APP_STORE_CONNECT_ISSUER_ID: Encrypted(81559dfb-0211-4029-ad4e-cf460b38f18a) # <-- Put your App Store Connect Issuer Id here
+        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(Q78YG2L77B) # <-- Put your App Store Connect Key Identifier here
+        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(-----BEGIN PRIVATE KEY-----
+        MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgDwFZJLj6BSF8nyav
+        jMMmoT4XDIvVkS+gbCUEkd0EhvCgCgYIKoZIzj0DAQehRANCAARFtVkLXUbFrbkA
+        KKr62EpVG9mUdckpK7HD0oi8Cmmq0hLpZy8LO9chmGR6wOQlRDMBMV2APoIASbqC
+        6s2Exhn9
+        -----END PRIVATE KEY-----)
 
     cache:
       cache_paths:
