@@ -28,12 +28,6 @@ workflows:
       - name: Run widget tests
         script: flutter test
         ignore_failure: false
-
-      - name: Set build number
-        script: | 
-          cd ios
-          agvtool new-version -all $BUILD_NUMBER
-          cd ..
           
       - name: Run Flutter build
         script: | 
