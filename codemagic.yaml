@@ -9,23 +9,38 @@ workflows:
       xcode: 16.4
       cocoapods: default
       vars:
-        BUNDLE_ID: "com.aitechapps.fitnesschallenge" # <-- replace with your app’s bundle ID
-        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...) # Add in Codemagic UI
-        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...) # Add in Codemagic UI
-        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...) # Add in Codemagic UI
+        BUNDLE_ID: "com.aitechapps.fitnesschallenge" 
+        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...)
+        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...)
+        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...)
+
+    cache:
+      cache_paths:
+        - $FLUTTER_ROOT/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
 
     scripts:
       - name: Install dependencies
-        script: |
+        script: | 
           flutter pub get
           cd ios && pod install --repo-update && cd ..
 
+      - name: Run widget tests
+        script: flutter test
+        ignore_failure: false
+
+      - name: Set build number
+        script: | 
+          cd ios
+          agvtool new-version -all $BUILD_NUMBER
+          cd ..
+          
       - name: Run Flutter build
-        script: |
+        script: | 
           flutter build ios --release --no-codesign
 
       - name: Run Crashlytics dSYM upload
-        script: |
+        script: | 
           chmod +x ios_crashlytics.sh
           ./ios_crashlytics.sh
 
@@ -35,7 +50,5 @@ workflows:
 
     publishing:
       app_store_connect:
-        auth: integration   # ✅ tells Codemagic to use the integration you linked in the UI
         submit_to_testflight: true
         submit_to_app_store: false
-
