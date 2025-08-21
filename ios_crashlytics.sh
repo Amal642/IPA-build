@@ -1,4 +1,8 @@
 #!/bin/sh
 set -e
 
-flutter pub run firebase_crashlytics:upload-symbols --ios
+# Go to ios folder
+cd ios
+
+# Upload dSYMs using the pod script
+./Pods/FirebaseCrashlytics/run
