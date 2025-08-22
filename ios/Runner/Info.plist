@@ -18,19 +18,13 @@
 
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>This app will write your step data to Apple Health to keep your fitness records synchronized.</string>
-	
+
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.aitechapps.fitnesschallenge.background-refresh</string>
 		<string>com.aitechapps.fitnesschallenge.background-processing</string>
 	</array>
-	<!-- ✅ Background Processing for Step Tracking -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-		<string>processing</string>
-		<string>remote-notification</string>
-	</array>
+	
 
 	<!-- ✅ Firebase Configuration -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
