@@ -114,106 +114,120 @@ class _LoginSignupPageState extends State<LoginSignupPage> {
     return File(picked.path);
   }
 
-  Future<void> _sendOTP() async {
-    FocusScope.of(context).unfocus();
+  // ✅ IMPROVED: Fix OTP sending for iOS in your LoginSignupPage
+Future<void> _sendOTP() async {
+  FocusScope.of(context).unfocus();
 
-    if (_pickedImage == null && _selectedAvatarUrl == null) {
-      _showSnack(
-        'Please select an avatar or pick a photo before continuing.',
-        error: true,
-      );
-      return;
-    }
-    if (!_formKey.currentState!.validate()) return;
+  if (_pickedImage == null && _selectedAvatarUrl == null) {
+    _showSnack('Please select an avatar or pick a photo before continuing.', error: true);
+    return;
+  }
+  if (!_formKey.currentState!.validate()) return;
 
-    final phone = phoneController.text.trim();
+  final phone = phoneController.text.trim();
 
-    // ✅ Enhanced phone validation
-    if (!_isValidPhone(phone, _selectedCountryCode)) {
-      final country = _selectedCountryCode == '+971' ? 'UAE' : 'Indian';
-      final len = _selectedCountryCode == '+971' ? '9' : '10';
-      _showSnack('Enter a valid $len-digit $country phone number', error: true);
-      return;
-    }
+  if (!_isValidPhone(phone, _selectedCountryCode)) {
+    final country = _selectedCountryCode == '+971' ? 'UAE' : 'Indian';
+    final len = _selectedCountryCode == '+971' ? '9' : '10';
+    _showSnack('Enter a valid $len-digit $country phone number', error: true);
+    return;
+  }
 
-    final fullPhone = '$_selectedCountryCode$phone';
+  final fullPhone = '$_selectedCountryCode$phone';
 
-    final hasNet = await _hasInternet();
-    if (!hasNet) {
-      _showSnack('No internet connection.', error: true);
-      return;
-    }
+  final hasNet = await _hasInternet();
+  if (!hasNet) {
+    _showSnack('No internet connection.', error: true);
+    return;
+  }
 
-    if (mounted) setState(() => isLoading = true);
+  if (mounted) setState(() => isLoading = true);
 
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: fullPhone,
-        timeout: const Duration(seconds: 60),
-        forceResendingToken: forceResendingToken,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          // ✅ FIXED: Enable auto sign-in for iOS
-          debugPrint('Auto verification completed for signup');
+  try {
+    await _auth.verifyPhoneNumber(
+      phoneNumber: fullPhone,
+      timeout: const Duration(seconds: 120), // ✅ Increased timeout for iOS
+      forceResendingToken: forceResendingToken,
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        debugPrint('✅ iOS Auto verification completed for signup');
+        if (Platform.isIOS) {
+          // ✅ FIXED: Better handling for iOS auto-verification
           try {
             final userCred = await _auth.signInWithCredential(credential);
             if (userCred.user != null) {
               await _afterAuthSuccess();
             }
           } catch (e) {
-            debugPrint('Auto sign-in failed: $e');
+            debugPrint('❌ iOS Auto sign-in failed: $e');
             // Continue with manual OTP entry
-            _showSnack('Please enter the OTP manually', error: false);
+            if (mounted) {
+              _showSnack('Please enter the OTP manually', error: false);
+              setState(() {
+                otpSent = true;
+                isLoading = false;
+              });
+            }
           }
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          if (mounted) setState(() => isLoading = false);
-          
-          // ✅ Better error handling for iOS
-          String errorMessage = 'Verification failed';
-          switch (e.code) {
-            case 'invalid-phone-number':
-              errorMessage = 'Invalid phone number format';
-              break;
-            case 'too-many-requests':
-              errorMessage = 'Too many requests. Please try again later';
-              break;
-            case 'operation-not-allowed':
-              errorMessage = 'Phone authentication is not enabled';
-              break;
-            case 'quota-exceeded':
-              errorMessage = 'SMS quota exceeded. Please try again later';
-              break;
-            default:
-              errorMessage = e.message ?? 'Verification failed';
-          }
-          
-          _showSnack(errorMessage, error: true);
-        },
-        codeSent: (String verId, int? resendToken) {
-          if (!mounted) return;
-          setState(() {
-            verificationId = verId;
-            otpSent = true;
-            isLoading = false;
-            forceResendingToken = resendToken;
-          });
-          _startResendTimer();
-          _showSnack('OTP sent successfully');
-        },
-        codeAutoRetrievalTimeout: (String verId) {
+        }
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        if (mounted) setState(() => isLoading = false);
+        
+        String errorMessage = 'Verification failed';
+        
+        // ✅ IMPROVED: Better iOS-specific error handling
+        switch (e.code) {
+          case 'invalid-phone-number':
+            errorMessage = 'Invalid phone number format. Please check the number and country code.';
+            break;
+          case 'too-many-requests':
+            errorMessage = 'Too many requests. Please wait and try again later.';
+            break;
+          case 'operation-not-allowed':
+            errorMessage = 'Phone authentication is not enabled. Please contact support.';
+            break;
+          case 'quota-exceeded':
+            errorMessage = 'SMS quota exceeded. Please try again later.';
+            break;
+          case 'app-not-authorized':
+            errorMessage = 'App not authorized for phone authentication.';
+            break;
+          case 'captcha-check-failed':
+            errorMessage = 'reCAPTCHA verification failed. Please try again.';
+            break;
+          default:
+            errorMessage = e.message ?? 'Phone verification failed. Please try again.';
+        }
+        
+        debugPrint('❌ iOS Phone verification failed: ${e.code} - ${e.message}');
+        _showSnack(errorMessage, error: true);
+      },
+      codeSent: (String verId, int? resendToken) {
+        if (!mounted) return;
+        debugPrint('✅ iOS OTP code sent successfully');
+        setState(() {
           verificationId = verId;
-          debugPrint('Auto retrieval timeout for signup');
-        },
-      );
-    } on SocketException {
-      _showSnack('No internet connection', error: true);
-      if (mounted) setState(() => isLoading = false);
-    } catch (e) {
-      _showSnack('Error sending OTP: $e', error: true);
-      if (mounted) setState(() => isLoading = false);
-    }
+          otpSent = true;
+          isLoading = false;
+          forceResendingToken = resendToken;
+        });
+        _startResendTimer();
+        _showSnack('OTP sent successfully! Check your messages.');
+      },
+      codeAutoRetrievalTimeout: (String verId) {
+        verificationId = verId;
+        debugPrint('⏰ iOS Auto retrieval timeout for signup');
+      },
+    );
+  } on SocketException {
+    _showSnack('No internet connection. Please check your connection and try again.', error: true);
+    if (mounted) setState(() => isLoading = false);
+  } catch (e) {
+    debugPrint('❌ iOS OTP sending error: $e');
+    _showSnack('Error sending OTP: ${e.toString()}', error: true);
+    if (mounted) setState(() => isLoading = false);
   }
-
+}
   Future<void> _verifyOTP(String code) async {
     if (_verifying) return; // ✅ Prevent multiple calls
     

@@ -42,6 +42,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>This app may use the camera to take your profile picture.</string>
 
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.healthcare-fitness</string>
+
 	<!-- ✅ Network Security for Firebase Phone Auth -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
