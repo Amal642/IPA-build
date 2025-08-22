@@ -6,12 +6,19 @@
 	<key>NSMotionUsageDescription</key>
 	<string>This app uses motion data to count your steps even in the background.</string>
 	
-	<!-- ✅ REQUIRED for HealthKit step tracking -->
+	<!-- ✅ REQUIRED: HealthKit Capability -->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>healthkit</string>
+	</array>
+
+	<!-- ✅ Better HealthKit descriptions -->
 	<key>NSHealthShareUsageDescription</key>
-	<string>This app needs access to your health data to read step count and track your fitness progress.</string>
-	
+	<string>This fitness app needs to read your step data from Apple Health to track your daily activity and progress in challenges.</string>
+
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>This app needs to update your health data to record step count and fitness activities.</string>
+	<string>This app will write your step data to Apple Health to keep your fitness records synchronized.</string>
+	
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.aitechapps.fitnesschallenge.background-refresh</string>

@@ -32,8 +32,6 @@ Future<void> main() async {
 
    // ✅ CRITICAL: Configure Firebase Auth for iOS
   if (Platform.isIOS) {
-    // Enable auto-retrieval and SMS verification for iOS
-    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099); // Remove this line in production
     
     // Set language code for better SMS delivery
     FirebaseAuth.instance.setLanguageCode('en');
@@ -173,40 +171,39 @@ void onStart(ServiceInstance service) async {
   try {
     Health health = Health();
 
-    // Define the types to get - FIXED: Use correct enum
+    // Define the types to get
     List<HealthDataType> types = [HealthDataType.STEPS];
 
-    // Request permissions first - CRITICAL FIX
-    bool authorized = await health.requestAuthorization(types, []);
+    // Check if HealthKit is available on device
+    bool? available = Health.hasPermissions(types);
     
-    if (!authorized) {
-      debugPrint("❌ HealthKit not authorized");
-      return 0;
+    if (available != true) {
+      // Request permissions - this will show iOS permission dialog
+      bool authorized = await health.requestAuthorization(types, []);
+      
+      if (!authorized) {
+        debugPrint("❌ HealthKit authorization denied");
+        return 0;
+      }
     }
 
-    // Get today's date range - FIXED: Proper date handling
+    // Get today's date range
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day, 0, 0, 0);
     final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
-    // Fetch the data - FIXED: Use proper method
+    // Fetch step data for today
     List<HealthDataPoint> healthData = await health.getHealthDataFromTypes(
       types: types,
       startTime: startOfDay,
       endTime: endOfDay,
     );
 
-    // Filter and sum steps for today only
+    // Sum up steps from all data points
     int totalSteps = 0;
     for (var point in healthData) {
       if (point.type == HealthDataType.STEPS) {
-        // Ensure the data point is from today
-        final pointDate = point.dateFrom;
-        if (pointDate.year == now.year && 
-            pointDate.month == now.month && 
-            pointDate.day == now.day) {
-          totalSteps += (point.value as num).round();
-        }
+        totalSteps += (point.value as num).round();
       }
     }
 
@@ -460,7 +457,7 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
 
   Future<void> _checkPermission() async {
   if (Platform.isAndroid) {
-    // Your existing Android code stays the same
+    // Your existing Android code
     final activityStatus = await Permission.activityRecognition.status;
     final notifStatus = await Permission.notification.status;
 
@@ -483,56 +480,34 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
     setState(() {
       _hasPermission = allGranted;
       _permanentlyDenied = anyForever;
-      _permissionMessage =
-          'This app needs permission to track your physical activity (for step counting) and to show low-importance notifications while counting steps.';
+      _permissionMessage = 'This app needs permission to track your physical activity...';
     });
   } else if (Platform.isIOS) {
-    // ✅ FIXED iOS HealthKit permission handling
+    // iOS: HealthKit permission handling
     try {
       Health health = Health();
+      List<HealthDataType> types = [HealthDataType.STEPS];
       
-      // Check if HealthKit is available on device
-      bool available = Health.hasPermissions([HealthDataType.STEPS]) ?? false;
+      // Request authorization - this triggers iOS Health permission dialog
+      bool authorized = await health.requestAuthorization(types, []);
       
-      if (!available) {
-        // Request authorization - this will show iOS permission dialog
-        bool authorized = await health.requestAuthorization([HealthDataType.STEPS], []);
-        
-        if (authorized) {
-          // Verify we actually have permissions
-          bool hasPermissions = await health.hasPermissions([HealthDataType.STEPS]) ?? false;
-          
-          setState(() {
-            _hasPermission = hasPermissions;
-            _permanentlyDenied = !hasPermissions;
-            _permissionMessage = hasPermissions 
-                ? 'Health access granted successfully!'
-                : 'Please enable Steps access in the Health app for this app to work.';
-          });
-        } else {
-          setState(() {
-            _hasPermission = false;
-            _permanentlyDenied = true;
-            _permissionMessage = 'Health data access is required to track your steps. Please go to Settings > Privacy & Security > Health > Data Access & Devices > [Your App Name] and enable Steps.';
-          });
-        }
-      } else {
-        setState(() {
-          _hasPermission = true;
-          _permanentlyDenied = false;
-        });
-      }
+      setState(() {
+        _hasPermission = authorized;
+        _permanentlyDenied = !authorized;
+        _permissionMessage = authorized 
+            ? 'Health access granted successfully!'
+            : 'Please enable Steps access in Settings → Privacy & Security → Health → Data Access & Devices → [Your App Name]';
+      });
       
-      debugPrint("✅ iOS Health permission check completed. Has permission: $_hasPermission");
+      debugPrint("✅ iOS Health permission: $authorized");
       
-    } catch (e, stackTrace) {
+    } catch (e) {
       debugPrint("❌ iOS Health permission error: $e");
-      debugPrint("Stack trace: $stackTrace");
       
       setState(() {
         _hasPermission = false;
         _permanentlyDenied = true;
-        _permissionMessage = 'Unable to access Health data. Please check your Health app settings and ensure this app has permission to read Steps data.';
+        _permissionMessage = 'Unable to access Health data. Please check Health app settings.';
       });
     }
   }
