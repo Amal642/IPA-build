@@ -47,5 +47,11 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)', '-ObjC']
     end
+    # ✅ Add Firebase Crashlytics run script automatically for Runner target
+    if target.name == 'Runner'
+      script_phase = target.new_shell_script_build_phase("Crashlytics Run Script")
+      script_phase.shell_script = '"${PODS_ROOT}/FirebaseCrashlytics/run"'
+      script_phase.show_env_vars_in_log = '0'
+    end
   end
 end
