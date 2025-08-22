@@ -1,0 +1,76 @@
+workflows:
+  ios-healthkit-setup:
+    name: iOS HealthKit Setup
+    instance_type: mac_mini_m1
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      cocoapods: default
+    scripts:
+      - name: Enable HealthKit Capability
+        script: |
+          # Install tool to modify Xcode projects
+          gem install xcodeproj
+          
+          # Create script to add HealthKit
+          cat > add_healthkit.rb << 'EOF'
+          require 'xcodeproj'
+          
+          project_path = 'ios/Runner.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+          target = project.targets.find { |t| t.name == 'Runner' }
+          
+          # Add HealthKit framework
+          target.add_system_framework('HealthKit')
+          
+          # Create entitlements file
+          entitlements_path = 'ios/Runner/Runner.entitlements'
+          entitlements_content = <<~XML
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>com.apple.developer.healthkit</key>
+                <true/>
+            </dict>
+            </plist>
+          XML
+          File.write(entitlements_path, entitlements_content)
+          
+          # Link entitlements to project
+          entitlements_ref = project.new_file(entitlements_path)
+          target.build_configurations.each do |config|
+            config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'Runner/Runner.entitlements'
+          end
+          
+          project.save
+          puts "✅ HealthKit capability added!"
+          EOF
+          
+          ruby add_healthkit.rb
+          
+      - name: Verify Setup
+        script: |
+          echo "Checking HealthKit setup..."
+          if grep -q "HealthKit" ios/Runner.xcodeproj/project.pbxproj; then
+            echo "✅ HealthKit found in project"
+          else
+            echo "❌ HealthKit NOT found"
+          fi
+          
+          if [ -f "ios/Runner/Runner.entitlements" ]; then
+            echo "✅ Entitlements file created"
+          else
+            echo "❌ Entitlements file missing"
+          fi
+          
+      - name: Test Flutter Build
+        script: |
+          flutter packages pub get
+          cd ios && pod install
+          flutter build ios --release --no-codesign
+          
+    artifacts:
+      - ios/Runner.xcodeproj/**
+      - ios/Runner/Runner.entitlements
+      - build/ios/Release-iphoneos/**
